@@ -6,7 +6,29 @@
 #include "../../thirdParty/MBES-lib/src/math/CoordinateTransform.hpp"
 #include "../../thirdParty/MBES-lib/src/sidescan/SideScanGeoreferencing.hpp"
 #include "../../thirdParty/MBES-lib/src/math/Distance.hpp"
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4305) // Third-party WMM geoid table stores float data as unsuffixed literals.
+#pragma warning(disable: 4101) // Third-party WMM code has intentional/legacy unused locals.
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-conversion"
+#pragma clang diagnostic ignored "-Wunused-variable"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-conversion"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#endif
 #include "../../thirdParty/MBES-lib/src/thirdParty/WorldMagneticModel/WMM2020_Linux/src/wmm_calculations.cpp"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #include <algorithm>
 #include <math.h>
 #include <filesystem>

@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  APP_VERSION: 0.1.${{ github.run_number }}
+
+permissions:
+  contents: read
+
+jobs:
+  lock_test_linux:
+    name: File Lock Tests (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libeigen3-dev libopencv-dev
+
+      - name: Build lock tests
+        run: bash Scripts/build_lock_test.sh
+
+      - name: Run lock tests
+        run: |
+          mkdir -p build/reports
+          test/linuxFileLockTest/build/lockTests -r junit -o build/reports/lock-test-report.xml || true
+          sleep 20
+          bash Scripts/cutReport.sh
+
+      - name: Upload Linux lock test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-lock-test-report
+          path: |
+            build/reports/lock-test-report.xml
+            build/reports/cut-report.xml
+          if-no-files-found: error
+
+  unit_tests_linux:
+    name: Unit Tests (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libeigen3-dev libopencv-dev qtbase5-dev
+
+      - name: Build unit tests
+        run: bash Scripts/build_linux_unit_tests.sh
+
+      - name: Run unit tests
+        run: OPENSIDESCAN_REQUIRE_XTF_DATASET=0 test/build/tests
+
+  build_linux:
+    name: Build OpenSidescan (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libeigen3-dev libopencv-dev qtbase5-dev
+
+      - name: Build OpenSidescan
+        run: bash Scripts/build_opensidescan.sh "$APP_VERSION"
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-opensidescan-binary
+          path: |
+            build/OpenSidescan
+            build/bin/*
+          if-no-files-found: warn
+
+  windows_ci:
+    name: Windows Build and Tests
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Restore OpenCV/Eigen cache
+        id: cache-win-libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\LIBS\opencv\build
+            C:\LIBS\eigen-3.4.0
+          key: windows-libs-opencv-4.5.5-eigen-3.4.0-v1
+
+      - name: Install Qt 5.15.2
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          arch: "win64_msvc2019_64"
+          dir: "C:\\Qt"
+          cache: "true"
+          cache-key-prefix: "opensidescan-qt-5.15.2-msvc2019_64"
+
+      - name: Install OpenCV 4.5.5 and Eigen 3.4.0 (prebuilt)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "C:\LIBS" | Out-Null
+
+          $opencvMarker = "C:\LIBS\opencv\build\OpenCVConfig.cmake"
+          if (-not (Test-Path $opencvMarker)) {
+            $opencvInstaller = Join-Path $env:RUNNER_TEMP "opencv-4.5.5-vc14_vc15.exe"
+            Invoke-WebRequest -Uri "https://github.com/opencv/opencv/releases/download/4.5.5/opencv-4.5.5-vc14_vc15.exe" -OutFile $opencvInstaller
+            $opencvExtractDir = Join-Path $env:RUNNER_TEMP "opencv-extract"
+            New-Item -ItemType Directory -Force -Path $opencvExtractDir | Out-Null
+            Start-Process -FilePath $opencvInstaller -ArgumentList "-y", "-o$opencvExtractDir" -Wait
+            New-Item -ItemType Directory -Force -Path "C:\LIBS\opencv" | Out-Null
+            Copy-Item -Path "$opencvExtractDir\opencv\build" -Destination "C:\LIBS\opencv\build" -Recurse -Force
+          }
+
+          $eigenMarker = "C:\LIBS\eigen-3.4.0\Eigen\Core"
+          if (-not (Test-Path $eigenMarker)) {
+            $eigenZip = Join-Path $env:RUNNER_TEMP "eigen-3.4.0.zip"
+            Invoke-WebRequest -Uri "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip" -OutFile $eigenZip
+            $eigenExtractDir = Join-Path $env:RUNNER_TEMP "eigen-extract"
+            Expand-Archive -Path $eigenZip -DestinationPath $eigenExtractDir -Force
+            New-Item -ItemType Directory -Force -Path "C:\LIBS\eigen-3.4.0" | Out-Null
+            Copy-Item -Path "$eigenExtractDir\eigen-3.4.0\*" -Destination "C:\LIBS\eigen-3.4.0" -Recurse -Force
+          }
+
+          "OpenCV_DIR=C:\LIBS\opencv\build" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $opencvBinCandidates = @(
+            "C:\LIBS\opencv\build\x64\vc17\bin",
+            "C:\LIBS\opencv\build\x64\vc16\bin",
+            "C:\LIBS\opencv\build\x64\vc15\bin"
+          )
+          $opencvBin = $opencvBinCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $opencvBin) {
+            throw "Unable to locate OpenCV runtime bin folder under C:\\LIBS\\opencv\\build\\x64\\vc*\\bin"
+          }
+          $opencvBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build and run lock tests
+        shell: cmd
+        run: |
+          call Scripts\winlocktest.bat
+          test\win-fileLock-test\build\Debug\wincatchLockTest.exe -r junit -o build\reports\winlock-test-report.xml
+
+      - name: Upload Windows lock test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-lock-test-report
+          path: build/reports/winlock-test-report.xml
+          if-no-files-found: error
+
+      - name: Build and run unit tests
+        shell: cmd
+        run: |
+          call Scripts\win-unittest.bat
+          test\build\tests.exe -r junit -o build\reports\win-unittest.xml
+
+      - name: Upload Windows unit test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unit-test-report
+          path: build/reports/win-unittest.xml
+          if-no-files-found: error
+
+      - name: Build OpenSidescan
+        shell: cmd
+        run: call Scripts\build_opensidescan_win.bat %APP_VERSION%
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $existing = Get-Command makensis -ErrorAction SilentlyContinue
+          if (-not $existing) {
+            choco install nsis -y --no-progress
+          }
+
+          $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+          $programFiles = [Environment]::GetFolderPath("ProgramFiles")
+          $nsisExeCandidates = @(
+            (Join-Path $programFilesX86 "NSIS\makensis.exe"),
+            (Join-Path $programFilesX86 "NSIS\Bin\makensis.exe"),
+            (Join-Path $programFiles "NSIS\makensis.exe"),
+            (Join-Path $programFiles "NSIS\Bin\makensis.exe"),
+            "C:\ProgramData\chocolatey\bin\makensis.exe"
+          )
+          if (-not ($nsisExeCandidates | Where-Object { Test-Path $_ })) {
+            $nsisExeCandidates += Get-ChildItem -Path @(
+              (Join-Path $programFilesX86 "NSIS"),
+              (Join-Path $programFiles "NSIS"),
+              "C:\ProgramData\chocolatey\lib"
+            ) -Filter "makensis.exe" -File -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+          }
+          $nsisExe = $nsisExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $nsisExe) {
+            throw "makensis.exe not found after NSIS install. Checked standard paths and recursive search under NSIS/chocolatey locations."
+          }
+          $nsisDir = Split-Path -Path $nsisExe -Parent
+          $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $nsisExe /VERSION
+
+      - name: Build unsigned installer
+        shell: cmd
+        run: call Scripts\build_installer.bat %APP_VERSION%
+
+      - name: Upload Windows build tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-tree
+          path: |
+            build\Release\**
+            build\RelWithDebInfo\**
+            build\Debug\**
+          if-no-files-found: error
+
+      - name: Upload unsigned Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned-installer
+          path: build\**\OpenSidescan-*-win64.exe
+          if-no-files-found: warn
+
+  # NOTE: Signing is intentionally disabled in this workflow.
+  # Recommended options for production signing:
+  # 1) Use a cloud/HSM signing service integrated in CI.
+  # 2) Use a dedicated self-hosted signing runner with USB token access.
+  signing_note:
+    name: Signing Note
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display signing strategy note
+        run: |
+          echo "Signing is disabled in CI."
+          echo "Use a cloud/HSM signing service or a dedicated signing host."

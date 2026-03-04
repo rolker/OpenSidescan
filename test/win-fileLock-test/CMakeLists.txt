@@ -54,8 +54,21 @@ INCLUDE_DIRECTORIES(${INCLUDE_DIR})
 
 if(WIN32)
 	message("windows cmake")
+	set(OPENCV_ROOT "C:/LIBS/opencv/build")
+	set(_opencv_runtime "")
+	foreach(_rt vc17 vc16 vc15 vc14)
+		if(EXISTS "${OPENCV_ROOT}/x64/${_rt}/lib")
+			set(_opencv_runtime "${_rt}")
+			break()
+		endif()
+	endforeach()
+	if(_opencv_runtime STREQUAL "")
+		message(FATAL_ERROR "Unable to find OpenCV libraries under ${OPENCV_ROOT}/x64/(vc17|vc16|vc15|vc14)/lib")
+	endif()
+	# Older OpenCVConfig.cmake files may not detect newer MSVC toolsets automatically.
+	set(OpenCV_RUNTIME "${_opencv_runtime}" CACHE STRING "OpenCV runtime" FORCE)
 	include_directories(C:/LIBS/eigen-3.4.0)
-	find_package(OpenCV 4.5 REQUIRED PATHS C:/LIBS/opencv/build/x64/vc15/lib)
+	find_package(OpenCV 4.5 REQUIRED PATHS "${OPENCV_ROOT}")
 	find_package(Qt5 5.12 COMPONENTS Widgets REQUIRED PATHS C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5)
 	find_package(Qt5Xml REQUIRED PATHS C:/Qt/5.15.2/msvc2019_64/lib)
 	
@@ -65,10 +78,16 @@ if(WIN32)
 	# creating targets
 	add_library(lockcath-dep ${LIB_FILES} ${THIRDPARTY})
 	add_executable(wincatchLockTest winLockCatchMain.cpp)
+	target_compile_definitions(wincatchLockTest PRIVATE CATCH_CONFIG_NO_POSIX_SIGNALS)
+	if(MSVC)
+		target_compile_definitions(lockcath-dep PRIVATE _CRT_SECURE_NO_WARNINGS)
+		target_compile_options(lockcath-dep PRIVATE /wd4996 /wd4244 /wd4267 /wd4200 /wd4305 /wd4101)
+		target_compile_definitions(wincatchLockTest PRIVATE _CRT_SECURE_NO_WARNINGS)
+		target_compile_options(wincatchLockTest PRIVATE /wd4996 /wd4244 /wd4267 /wd4200 /wd4305 /wd4101)
+	endif()
 	# linking dependencies
 	target_link_libraries(lockcath-dep ${OpenCV_LIBS})
 	target_link_libraries(wincatchLockTest PUBLIC lockcath-dep)
 
 	
 endif()
-
