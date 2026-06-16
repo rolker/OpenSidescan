@@ -150,7 +150,7 @@ if(UNIX)
 	target_link_libraries(sidescan-detect PUBLIC cli_dep)
 	target_link_libraries(sidescan-dump PUBLIC cli_dep)
 	target_link_libraries(sidescan-glcm PUBLIC cli_dep)
-	target_link_libraries(haralick-analysis PUBLIC cli_dep mlpack armadillo gomp)
+	target_link_libraries(haralick-analysis PUBLIC cli_dep armadillo gomp) # mlpack 4.x is header-only; no libmlpack to link
 	
 	install(TARGETS sidescan-dump DESTINATION /usr/local/bin/)
 	

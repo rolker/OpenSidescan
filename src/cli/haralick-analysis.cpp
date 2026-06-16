@@ -22,8 +22,8 @@ int findOptimalNbClusters(arma::mat features, int maxGaussians){
 	double likelihood;
 
 	do{
-		mlpack::gmm::GMM* gmm = NULL;
-		gmm = new mlpack::gmm::GMM(std::size_t(gaussian), features.n_rows);
+		mlpack::GMM* gmm = NULL;
+		gmm = new mlpack::GMM(std::size_t(gaussian), features.n_rows);
 		
 		
 		const size_t maxIterations = 300;
@@ -31,7 +31,7 @@ int findOptimalNbClusters(arma::mat features, int maxGaussians){
 		const std::size_t kmeansMaxIterations = 1000;
 		const std::size_t trials = 3;
 
-		mlpack::gmm::EMFit<> em(maxIterations, tolerance, mlpack::kmeans::KMeans<>(kmeansMaxIterations));
+		mlpack::EMFit<> em(maxIterations, tolerance, mlpack::KMeans<>(kmeansMaxIterations));
 		likelihood = gmm->Train(std::move(features), trials, false, em);
 		
 		std::cout<< "Log-likelihood of estimate: " << likelihood << "." << std::endl;
@@ -74,15 +74,15 @@ int main (int argc , char ** argv ){
 	
 	//int bestFit = 5;
 
-	mlpack::gmm::GMM* gmm = NULL;
-	gmm = new mlpack::gmm::GMM(std::size_t(bestFit), features.n_rows);
+	mlpack::GMM* gmm = NULL;
+	gmm = new mlpack::GMM(std::size_t(bestFit), features.n_rows);
 	
 	const size_t maxIterations = 300;
 	const double tolerance = 1e-10;
 	const std::size_t kmeansMaxIterations = 1000;
 	const std::size_t trials = 1;
 
-	mlpack::gmm::EMFit<> em(maxIterations, tolerance, mlpack::kmeans::KMeans<>(kmeansMaxIterations));
+	mlpack::EMFit<> em(maxIterations, tolerance, mlpack::KMeans<>(kmeansMaxIterations));
 	double likelihood = gmm->Train(std::move(features), trials, false, em);
 	
 	gmm->Classify(std::move(features), labels);
